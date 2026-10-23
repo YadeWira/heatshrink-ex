@@ -67,6 +67,26 @@ build_win()
 build_win i686 i686-w64-mingw32-gcc win32
 build_win x86_64 x86_64-w64-mingw32-gcc win64
 
+# Vendor tarball: the six library files flat, for projects that copy the
+# sources into their tree instead of linking a library.
+VSTAGE=$DIST/vendor-$VERSION
+rm -rf "$VSTAGE"
+mkdir -p "$VSTAGE/hs"
+for f in \
+    src/heatshrink_encoder.c \
+    src/heatshrink_decoder.c \
+    include/heatshrink_common.h \
+    include/heatshrink_config.h \
+    include/heatshrink_encoder.h \
+    include/heatshrink_decoder.h; do
+    cp "$f" "$VSTAGE/hs/"
+done
+cp LICENSE "$VSTAGE/hs/"
+sed "s/@VERSION@/$VERSION/g" packaging/vendor-README.md > "$VSTAGE/hs/VENDOR.md"
+(cd "$VSTAGE" && tar czf "../$NAME-vendor.tar.gz" hs)
+rm -rf "$VSTAGE"
+echo "    $DIST/$NAME-vendor.tar.gz"
+
 cd "$DIST"
 sha256sum ./*.tar.gz ./*.zip 2>/dev/null > SHA256SUMS || true
 echo
