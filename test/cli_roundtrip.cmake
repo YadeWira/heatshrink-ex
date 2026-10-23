@@ -113,6 +113,32 @@ run_framed("framed-w8" "-w 8 -l 3" "" "${WORKDIR}/input.txt")
 run_framed("framed-explicit-match" "-w 13 -l 5" "-w 13 -l 5" "${WORKDIR}/input.txt")
 run_framed("framed-empty" "" "" "${WORKDIR}/empty.bin")
 
+# -c adds the uncompressed size and CRC32 to the frame; decoding verifies both.
+run_framed("summed" "-c -w 12 -l 5" "" "${WORKDIR}/input.txt")
+
+# Check the extension fields against known values (input.txt is 22,400 bytes
+# and its zlib CRC32 is 0xf5b13ad2; both stored little-endian).
+file(READ "${WORKDIR}/summed.hs" _hdr HEX LIMIT 20)
+string(SUBSTRING "${_hdr}" 16 16 _size_field)
+string(SUBSTRING "${_hdr}" 32 8 _crc_field)
+if(NOT _size_field STREQUAL "8057000000000000")
+    message(FATAL_ERROR "frame size field is ${_size_field}, expected 8057000000000000")
+endif()
+if(NOT _crc_field STREQUAL "f5b13ad2")
+    message(FATAL_ERROR "frame CRC32 field is ${_crc_field}, expected f5b13ad2")
+endif()
+
+# Extra bytes after the payload must be detected (decoded size changes).
+string(ASCII 255 255 255 255 255 255 255 255 _ff)
+file(APPEND "${WORKDIR}/summed.hs" "${_ff}")
+expect_failure("checksum-detects-extra-data" -d "${WORKDIR}/summed.hs" "${WORKDIR}/summed.bad")
+if(EXISTS "${WORKDIR}/summed.bad")
+    message(FATAL_ERROR "the failed decode left its output file behind")
+endif()
+
+# -c has to reread the input, so it cannot work from a pipe.
+expect_failure("checksum-needs-file" -e -c - "${WORKDIR}/no-such.hs")
+
 # The header must win over nothing, but must not be silently overridden by a
 # contradictory command line.
 expect_failure("framed-conflicting-w" -d -w 11 "${WORKDIR}/framed-explicit-match.hs")

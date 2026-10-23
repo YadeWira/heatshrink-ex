@@ -1,5 +1,30 @@
 # heatshrink Changes By Release
 
+## v0.7.0 - 2026-10-23
+
+### New
+
+Optional integrity extension for framed streams (`-c`). It implies `-f` and
+adds twelve bytes to the header:
+
+    8..15   uncompressed size, 64-bit little endian
+    16..19  IEEE CRC32 of the uncompressed data, 32-bit little endian
+
+Decoding verifies both after decompressing; a mismatch exits with status 1 and
+removes the partial output file.
+
+    heatshrink -e -c -w 13 -l 5 data.bin data.hs
+    heatshrink -d data.hs out.bin        # size and CRC32 verified
+
+`-c` reads the input twice (once to compute the checksum, once to compress),
+so it requires a regular input file; `heatshrink -e -c` from a pipe is an
+error. The checksum lives in the header, not in a trailer, so decoding still
+works from a pipe.
+
+Frames written by 0.6.0 (`-f` alone) are unchanged and keep decoding: the
+extension is flagged by bit 0 of the header flags, and frames without it do
+not carry a checksum.
+
 ## v0.6.0 - 2026-10-23
 
 ### New

@@ -49,6 +49,13 @@
 #define HS_FRAME_VERSION 1
 #define HS_FRAME_HEADER_SIZE 8
 
+/* Optional extension, present when flag bit 0 is set: the uncompressed size
+ * (64-bit little endian) followed by the IEEE CRC32 of the uncompressed data
+ * (32-bit little endian). It is written by `-c`, which requires rereading the
+ * input, so it only works with a regular input file. */
+#define HS_FRAME_FLAG_EXT 0x01
+#define HS_FRAME_EXT_SIZE 12
+
 #define DEF_WINDOW_SZ2 11
 #define DEF_LOOKAHEAD_SZ2 4
 #define DEF_DECODER_INPUT_BUFFER_SIZE 256
@@ -86,6 +93,13 @@ typedef struct {
     size_t buffer_size;
     int verbose;
     int frame;                  /* -f: write / require a frame header */
+    int checksum;               /* -c: add size + CRC32 to the frame */
+    uint64_t decoded_size;      /* output bytes seen while decoding */
+    uint32_t decoded_crc;       /* running CRC32 of the output */
+    int verify_size;            /* the frame declared a size */
+    int verify_crc;             /* the frame declared a CRC32 */
+    uint64_t expected_size;
+    uint32_t expected_crc;
     int raw;                    /* -r: never interpret a frame header */
     int window_set;             /* -w was given explicitly */
     int lookahead_set;          /* -l was given explicitly */
@@ -133,6 +147,8 @@ static void usage(FILE *stream) {
         " -v        verbose (print input & output sizes, compression ratio, etc.)\n"
         " -f        encode: write an 8-byte frame header with -w and -l\n"
         "           decode: require a frame header (it is auto-detected anyway)\n"
+        " -c        encode: add uncompressed size and CRC32 to the frame (implies\n"
+        "           -f, and needs a regular input file; verified when decoding)\n"
         " -r        decode: treat the input as raw, never as a framed stream\n"
         "\n"
         " -w SIZE   Base-2 log of LZSS sliding window size (default: %d)\n"
@@ -320,17 +336,86 @@ static int encoder_sink_read(config *cfg, heatshrink_encoder *hse,
     return 0;
 }
 
+static uint32_t crc32_table[256];
+static int crc32_table_ready = 0;
+
+static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t size) {
+    if (!crc32_table_ready) {
+        for (uint32_t i = 0; i < 256; i++) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; k++) {
+                c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+            }
+            crc32_table[i] = c;
+        }
+        crc32_table_ready = 1;
+    }
+    for (size_t i = 0; i < size; i++) {
+        crc = crc32_table[(crc ^ data[i]) & 0xFFu] ^ (crc >> 8);
+    }
+    return crc;
+}
+
+/* Read the whole input once to learn its size and CRC32, then rewind. Only
+ * possible on a regular file; pipes and standard input are rejected. */
+static void checksum_input(config *cfg, uint64_t *size_out, uint32_t *crc_out) {
+    io_handle *io = cfg->in;
+    uint8_t buf[65536];
+    uint64_t total = 0;
+    uint32_t crc = 0xFFFFFFFFu;
+
+    if (!io->owns_fp) {
+        die("-c needs a regular input file (cannot reread a pipe or standard input)");
+    }
+    if (fseek(io->fp, 0, SEEK_END) != 0) { die_errno("seek"); }
+    if (fseek(io->fp, 0, SEEK_SET) != 0) { die_errno("seek"); }
+
+    for (;;) {
+        size_t n = fread(buf, 1, sizeof(buf), io->fp);
+        if (n > 0) {
+            total += (uint64_t)n;
+            crc = crc32_update(crc, buf, n);
+        }
+        if (n < sizeof(buf)) {
+            if (ferror(io->fp)) { die_errno("read"); }
+            break;
+        }
+    }
+
+    if (fseek(io->fp, 0, SEEK_SET) != 0) { die_errno("seek"); }
+    clearerr(io->fp);
+    *size_out = total;
+    *crc_out = crc ^ 0xFFFFFFFFu;
+}
+
 static void write_frame_header(config *cfg) {
-    uint8_t hdr[HS_FRAME_HEADER_SIZE];
+    uint8_t hdr[HS_FRAME_HEADER_SIZE + HS_FRAME_EXT_SIZE];
+    size_t hdr_len = HS_FRAME_HEADER_SIZE;
     size_t sunk = 0;
 
+    memset(hdr, 0, sizeof(hdr));
     memcpy(hdr, HS_FRAME_MAGIC, 4);
     hdr[4] = HS_FRAME_VERSION;
     hdr[5] = 0;                 /* flags */
     hdr[6] = cfg->window_sz2;
     hdr[7] = cfg->lookahead_sz2;
 
-    if (!handle_sink(cfg->out, hdr, sizeof(hdr), &sunk)) { die_errno("write"); }
+    if (cfg->checksum) {
+        uint64_t size = 0;
+        uint32_t crc = 0;
+
+        checksum_input(cfg, &size, &crc);
+        hdr[5] |= HS_FRAME_FLAG_EXT;
+        for (int i = 0; i < 8; i++) {
+            hdr[8 + i] = (uint8_t)(size >> (8 * i));
+        }
+        for (int i = 0; i < 4; i++) {
+            hdr[16 + i] = (uint8_t)(crc >> (8 * i));
+        }
+        hdr_len += HS_FRAME_EXT_SIZE;
+    }
+
+    if (!handle_sink(cfg->out, hdr, hdr_len, &sunk)) { die_errno("write"); }
 }
 
 static int encode(config *cfg) {
@@ -366,6 +451,23 @@ static int encode(config *cfg) {
     bool ok = handle_close(cfg->in);
     ok = handle_close(cfg->out) && ok;
     if (!ok) { die_errno("close"); }
+
+    if (cfg->verify_size && (cfg->decoded_size != cfg->expected_size)) {
+        if (strcmp(cfg->out_fname, "-") != 0) { (void)remove(cfg->out_fname); }
+        die("size mismatch: frame says " HS_SIZE_FMT " bytes, decoded " HS_SIZE_FMT,
+            HS_SIZE(cfg->expected_size), HS_SIZE(cfg->decoded_size));
+    }
+    if (cfg->verify_crc) {
+        uint32_t got = cfg->decoded_crc ^ 0xFFFFFFFFu;
+        if (got != cfg->expected_crc) {
+            if (strcmp(cfg->out_fname, "-") != 0) { (void)remove(cfg->out_fname); }
+            die("CRC32 mismatch: frame says %08x, decoded %08x",
+                (unsigned)cfg->expected_crc, (unsigned)got);
+        }
+        if (cfg->verbose) {
+            fprintf(stderr, "size and CRC32 verified\n");
+        }
+    }
     if (cfg->verbose) { report(cfg); }
     handle_free(cfg->in);
     handle_free(cfg->out);
@@ -395,6 +497,10 @@ static int decoder_sink_read(config *cfg, heatshrink_decoder *hsd,
             size_t sink_bytes = 0;
             if (!handle_sink(out, out_buf, poll_sz, &sink_bytes)) {
                 die_errno("write");
+            }
+            if (cfg->verify_crc || cfg->verify_size) {
+                cfg->decoded_size += (uint64_t)poll_sz;
+                cfg->decoded_crc = crc32_update(cfg->decoded_crc, out_buf, poll_sz);
             }
         } while (pres == HSDR_POLL_MORE);
 
@@ -437,7 +543,7 @@ static int read_frame_header(config *cfg) {
         die("unsupported frame version %u (this build knows version %u)",
             (unsigned)version, (unsigned)HS_FRAME_VERSION);
     }
-    if (flags != 0) {
+    if (flags & (uint8_t)~HS_FRAME_FLAG_EXT) {
         die("unsupported frame flags 0x%02x", (unsigned)flags);
     }
     if ((window_sz2 < HEATSHRINK_MIN_WINDOW_BITS)
@@ -457,12 +563,35 @@ static int read_frame_header(config *cfg) {
             (unsigned)lookahead_sz2, (unsigned)cfg->lookahead_sz2);
     }
 
-    cfg->window_sz2 = window_sz2;
-    cfg->lookahead_sz2 = lookahead_sz2;
-
     if (!handle_drop(cfg->in, HS_FRAME_HEADER_SIZE)) {
         die("internal error: bad drop");
     }
+
+    if (flags & HS_FRAME_FLAG_EXT) {
+        uint8_t *ep = NULL;
+        size_t en = 0;
+        uint64_t size = 0;
+        uint32_t crc = 0;
+
+        if (!handle_read(cfg->in, HS_FRAME_EXT_SIZE, &ep, &en)) { die_errno("read"); }
+        if (en < HS_FRAME_EXT_SIZE) { die("truncated frame header"); }
+        for (int i = 0; i < 8; i++) {
+            size |= (uint64_t)ep[i] << (8 * i);
+        }
+        for (int i = 0; i < 4; i++) {
+            crc |= (uint32_t)ep[8 + i] << (8 * i);
+        }
+        if (!handle_drop(cfg->in, HS_FRAME_EXT_SIZE)) {
+            die("internal error: bad drop");
+        }
+        cfg->verify_size = 1;
+        cfg->expected_size = size;
+        cfg->verify_crc = 1;
+        cfg->expected_crc = crc;
+    }
+
+    cfg->window_sz2 = window_sz2;
+    cfg->lookahead_sz2 = lookahead_sz2;
     if (cfg->verbose) {
         fprintf(stderr, "framed stream: -w %u -l %u\n",
             (unsigned)window_sz2, (unsigned)lookahead_sz2);
@@ -471,6 +600,9 @@ static int read_frame_header(config *cfg) {
 }
 
 static int decode(config *cfg) {
+    cfg->decoded_size = 0;
+    cfg->decoded_crc = 0xFFFFFFFFu;
+
     if (read_frame_header(cfg)) { /* settings now come from the header */ }
 
     uint8_t window_sz2 = cfg->window_sz2;
@@ -507,6 +639,23 @@ static int decode(config *cfg) {
     bool ok = handle_close(cfg->in);
     ok = handle_close(cfg->out) && ok;
     if (!ok) { die_errno("close"); }
+
+    if (cfg->verify_size && (cfg->decoded_size != cfg->expected_size)) {
+        if (strcmp(cfg->out_fname, "-") != 0) { (void)remove(cfg->out_fname); }
+        die("size mismatch: frame says " HS_SIZE_FMT " bytes, decoded " HS_SIZE_FMT,
+            HS_SIZE(cfg->expected_size), HS_SIZE(cfg->decoded_size));
+    }
+    if (cfg->verify_crc) {
+        uint32_t got = cfg->decoded_crc ^ 0xFFFFFFFFu;
+        if (got != cfg->expected_crc) {
+            if (strcmp(cfg->out_fname, "-") != 0) { (void)remove(cfg->out_fname); }
+            die("CRC32 mismatch: frame says %08x, decoded %08x",
+                (unsigned)cfg->expected_crc, (unsigned)got);
+        }
+        if (cfg->verbose) {
+            fprintf(stderr, "size and CRC32 verified\n");
+        }
+    }
     if (cfg->verbose) { report(cfg); }
     handle_free(cfg->in);
     handle_free(cfg->out);
@@ -612,6 +761,10 @@ static void proc_args(config *cfg, int argc, char **argv) {
                 cfg->verbose++;
                 continue;
             case 'f':
+                cfg->frame = 1;
+                continue;
+            case 'c':
+                cfg->checksum = 1;
                 cfg->frame = 1;
                 continue;
             case 'r':
