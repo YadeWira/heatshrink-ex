@@ -23,6 +23,14 @@ Licensed under the ISC license, like upstream. See `CHANGELOG.md` for details.
 
 [![CI](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml/badge.svg)](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml)
 
+## Adoption
+
+* **[zpaq-std](https://github.com/YadeWira/zpaq-std/releases/tag/v1.6.0) 1.6.0**
+  vendors the six library files (byte-identical to tag `v0.5.0`) for its
+  `-ma:hs` compression levels. Verified on Windows 7 x86 and x64, producing
+  output identical to heatshrink 0.4.1 and readable by zpaq 7.15 and
+  zpaqfranz.
+
 
 ## Key Features:
 
