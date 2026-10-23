@@ -146,7 +146,9 @@ TEST pseudorandom_data_should_match(uint32_t size, uint32_t seed) {
 }
 
 SUITE(integration) {
-#if __STDC_VERSION__ >= 19901L
+/* Declarations in for loops need C99, which MSVC supports since VS2015. */
+#if (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)) || \
+    (defined(_MSC_VER) && (_MSC_VER >= 1900))
     for (uint32_t size=1; size < 64*1024; size <<= 1) {
         if (GREATEST_IS_VERBOSE()) printf(" -- size %u\n", size);
             for (uint32_t seed=1; seed<=100; seed++) {

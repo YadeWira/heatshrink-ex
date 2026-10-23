@@ -14,6 +14,13 @@ target_include_directories(test_heatshrink_static PRIVATE ${HS_TEST_INCLUDES})
 target_link_libraries(test_heatshrink_static PRIVATE heatshrink_static)
 hs_set_warnings(test_heatshrink_static)
 
+if(MSVC)
+    # strncat and friends are flagged as unsafe by MSVC's CRT; the tests use
+    # them deliberately and the buffers are sized by hand.
+    target_compile_definitions(test_heatshrink_dynamic PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_heatshrink_static PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 add_test(NAME heatshrink_dynamic COMMAND test_heatshrink_dynamic)
 add_test(NAME heatshrink_static COMMAND test_heatshrink_static)
 
