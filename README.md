@@ -1,6 +1,27 @@
-# heatshrink
+# heatshrink-ex
 
-A data compression/decompression library for embedded/real-time systems.
+A multiplatform fork of [heatshrink](https://github.com/atomicobject/heatshrink),
+the data compression/decompression library for embedded/real-time systems.
+
+The bit stream is **identical** to upstream heatshrink 0.4.x: files written by
+this fork decode with the original tool and vice versa. What this fork adds:
+
+- A portable **CMake** build for Linux (x86, x86_64, ARMv7, AArch64), Windows
+  (x86/x64, MSVC or MinGW-w64, **Windows 7 SP1+**) and macOS, with install
+  rules and a `find_package(heatshrink CONFIG)` package.
+- A command line tool with **no POSIX-only dependencies** (no `getopt.h`,
+  `err.h` or `unistd.h`, no variable length arrays), so it builds with MSVC and
+  handles binary standard input/output correctly on Windows.
+- The library itself compiles with MSVC in C mode (no flexible array members)
+  and can be used from C++ (`extern "C"` guards).
+- Fixes for three upstream bugs: the encoder crashing on empty input (#57), the
+  broken 15-bit window index that made `-w 15` expand data or hang (#55, #86),
+  and `heatshrink_decoder_poll()` reporting `MORE` forever when the output
+  buffer was exactly the size of the decoded data (#74).
+
+Licensed under the ISC license, like upstream. See `CHANGELOG.md` for details.
+
+[![CI](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml/badge.svg)](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml)
 
 
 ## Key Features:

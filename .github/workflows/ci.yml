@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64-gcc
+            os: ubuntu-latest
+            cc: gcc
+          - name: linux-x86_64-clang
+            os: ubuntu-latest
+            cc: clang
+          - name: linux-i686-gcc
+            os: ubuntu-latest
+            cc: gcc
+            packages: gcc-multilib
+            extra: -DCMAKE_C_FLAGS=-m32 -DCMAKE_EXE_LINKER_FLAGS=-m32
+          - name: linux-shared
+            os: ubuntu-latest
+            cc: gcc
+            extra: -DBUILD_SHARED_LIBS=ON
+          - name: macos-clang
+            os: macos-latest
+            cc: clang
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packages
+        if: matrix.packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.extra }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows-msvc:
+    name: windows-msvc-${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [Win32, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A ${{ matrix.arch }} -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  windows-mingw:
+    name: windows-mingw-${{ matrix.msystem }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - msystem: MINGW64
+            packages: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make
+          - msystem: MINGW32
+            packages: mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-make
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: ${{ matrix.packages }}
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build --parallel
+
+      - name: Test
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure
+
+  linux-arm-cross:
+    name: linux-${{ matrix.arch }}-cross
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            cc: aarch64-linux-gnu-gcc
+            packages: gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+            emulator: qemu-aarch64;-L;/usr/aarch64-linux-gnu
+          - arch: armhf
+            cc: arm-linux-gnueabihf-gcc
+            packages: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
+            emulator: qemu-arm;-L;/usr/arm-linux-gnueabihf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install packages
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_SYSTEM_NAME=Linux
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          "-DCMAKE_CROSSCOMPILING_EMULATOR=${{ matrix.emulator }}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test (qemu user mode)
+        run: ctest --test-dir build --output-on-failure

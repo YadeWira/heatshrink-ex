@@ -21,9 +21,12 @@ set_tests_properties(heatshrink_dynamic heatshrink_static PROPERTIES
     TIMEOUT 600)
 
 if(TARGET heatshrink_cmd)
+    # When cross compiling, run the tool through the configured emulator (for
+    # example qemu-aarch64 -L /usr/aarch64-linux-gnu).
     add_test(NAME cli_roundtrip
         COMMAND ${CMAKE_COMMAND}
             -DHEATSHRINK=$<TARGET_FILE:heatshrink_cmd>
+            "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}"
             -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/cli_roundtrip
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_roundtrip.cmake)
     set_tests_properties(cli_roundtrip PROPERTIES TIMEOUT 300)
