@@ -6,6 +6,10 @@
 #include "heatshrink_common.h"
 #include "heatshrink_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     HSDR_SINK_OK,               /* data sunk, ready to poll */
     HSDR_SINK_FULL,             /* out of space in internal buffer */
@@ -58,7 +62,7 @@ typedef struct {
     uint16_t input_buffer_size; /* input buffer size */
 
     /* Input buffer, then expansion window buffer */
-    uint8_t buffers[];
+    uint8_t buffers[1];         /* actually (1 << window_sz2) + input_buffer_size */
 #else
     /* Input buffer, then expansion window buffer */
     uint8_t buffers[(1 << HEATSHRINK_DECODER_WINDOW_BITS(_))
@@ -85,7 +89,7 @@ void heatshrink_decoder_reset(heatshrink_decoder *hsd);
 /* Sink at most SIZE bytes from IN_BUF into the decoder. *INPUT_SIZE is set to
  * indicate how many bytes were actually sunk (in case a buffer was filled). */
 HSD_sink_res heatshrink_decoder_sink(heatshrink_decoder *hsd,
-    uint8_t *in_buf, size_t size, size_t *input_size);
+    const uint8_t *in_buf, size_t size, size_t *input_size);
 
 /* Poll for output from the decoder, copying at most OUT_BUF_SIZE bytes into
  * OUT_BUF (setting *OUTPUT_SIZE to the actual amount copied). */
@@ -96,5 +100,9 @@ HSD_poll_res heatshrink_decoder_poll(heatshrink_decoder *hsd,
  * If the return value is HSDR_FINISH_MORE, there is still more output, so
  * call heatshrink_decoder_poll and repeat. */
 HSD_finish_res heatshrink_decoder_finish(heatshrink_decoder *hsd);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

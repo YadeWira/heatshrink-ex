@@ -137,9 +137,12 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, in
 }
 
 TEST pseudorandom_data_should_match(uint32_t size, uint32_t seed) {
-    uint8_t input[size];
+    uint8_t *input = malloc(size);
+    if (input == NULL) FAILm("malloc fail");
     fill_with_pseudorandom_letters(input, size, seed);
-    return compress_and_expand_and_check(input, size, 0);
+    int res = compress_and_expand_and_check(input, size, 0);
+    free(input);
+    return res;
 }
 
 SUITE(integration) {

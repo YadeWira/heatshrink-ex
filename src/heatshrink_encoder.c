@@ -81,36 +81,38 @@ heatshrink_encoder *heatshrink_encoder_alloc(uint8_t window_sz2,
      * (1 << window_sz2) bytes for the previous buffer of input, which
      * will be scanned for useful backreferences. */
     size_t buf_sz = (2U << window_sz2);
+    size_t hse_sz = offsetof(heatshrink_encoder, buffer) + buf_sz;
 
-    heatshrink_encoder *hse = HEATSHRINK_MALLOC(sizeof(*hse) + buf_sz);
+    heatshrink_encoder *hse = HEATSHRINK_MALLOC(hse_sz);
     if (hse == NULL) { return NULL; }
     hse->window_sz2 = window_sz2;
     hse->lookahead_sz2 = lookahead_sz2;
     heatshrink_encoder_reset(hse);
 
 #if HEATSHRINK_USE_INDEX
-    size_t index_sz = buf_sz*sizeof(uint16_t);
-    hse->search_index = HEATSHRINK_MALLOC(index_sz + sizeof(struct hs_index));
+    size_t index_sz = buf_sz * sizeof(uint16_t);
+    size_t index_alloc_sz = offsetof(struct hs_index, index) + index_sz;
+    hse->search_index = HEATSHRINK_MALLOC(index_alloc_sz);
     if (hse->search_index == NULL) {
-        HEATSHRINK_FREE(hse, sizeof(*hse) + buf_sz);
+        HEATSHRINK_FREE(hse, hse_sz);
         return NULL;
     }
-    hse->search_index->size = (uint16_t)index_sz;
+    hse->search_index->size = index_sz;
 #endif
 
-    LOG("-- allocated encoder with buffer size of %zu (%u byte input size)\n",
-        buf_sz, get_input_buffer_size(hse));
+    LOG("-- allocated encoder with buffer size of %lu (%u byte input size)\n",
+        (unsigned long)buf_sz, get_input_buffer_size(hse));
     return hse;
 }
 
 void heatshrink_encoder_free(heatshrink_encoder *hse) {
     size_t buf_sz = (2U << HEATSHRINK_ENCODER_WINDOW_BITS(hse));
 #if HEATSHRINK_USE_INDEX
-    size_t index_sz = sizeof(struct hs_index) + hse->search_index->size;
+    size_t index_sz = offsetof(struct hs_index, index) + hse->search_index->size;
     HEATSHRINK_FREE(hse->search_index, index_sz);
     (void)index_sz;
 #endif
-    HEATSHRINK_FREE(hse, sizeof(heatshrink_encoder) + buf_sz);
+    HEATSHRINK_FREE(hse, offsetof(heatshrink_encoder, buffer) + buf_sz);
     (void)buf_sz;
 }
 #endif
@@ -135,7 +137,7 @@ void heatshrink_encoder_reset(heatshrink_encoder *hse) {
 }
 
 HSE_sink_res heatshrink_encoder_sink(heatshrink_encoder *hse,
-        uint8_t *in_buf, size_t size, size_t *input_size) {
+        const uint8_t *in_buf, size_t size, size_t *input_size) {
     if ((hse == NULL) || (in_buf == NULL) || (input_size == NULL)) {
         return HSER_SINK_ERROR_NULL;
     }
@@ -155,8 +157,8 @@ HSE_sink_res heatshrink_encoder_sink(heatshrink_encoder *hse,
     *input_size = cp_sz;
     hse->input_size += cp_sz;
 
-    LOG("-- sunk %u bytes (of %zu) into encoder at %d, input buffer now has %u\n",
-        cp_sz, size, write_offset, hse->input_size);
+    LOG("-- sunk %u bytes (of %lu) into encoder at %d, input buffer now has %u\n",
+        cp_sz, (unsigned long)size, write_offset, hse->input_size);
     if (cp_sz == rem) {
         LOG("-- internal buffer is now full\n");
         hse->state = HSES_FILLED;
@@ -269,7 +271,13 @@ static HSE_state st_step_search(heatshrink_encoder *hse) {
         msi, hse->input_size + msi, 2*window_length, hse->input_size);
 
     bool fin = is_finishing(hse);
-    if (msi > hse->input_size - (fin ? 1 : lookahead_sz)) {
+    if (fin && hse->input_size == 0) {
+        /* Nothing left to encode: flushing the bit buffer is all that
+         * remains. Without this check the `input_size - 1` below would
+         * underflow and the search step would run past the end of the
+         * input buffer. */
+        return HSES_FLUSH_BITS;
+    } else if (msi > hse->input_size - (fin ? 1 : lookahead_sz)) {
         /* Current search buffer is exhausted, copy it into the
          * backlog and await more input. */
         LOG("-- end of search @ %d\n", msi);
@@ -422,20 +430,23 @@ static void do_indexing(heatshrink_encoder *hse) {
      *    dynamically improve the index.
      * */
     struct hs_index *hsi = HEATSHRINK_ENCODER_INDEX(hse);
-    int16_t last[256];
+    uint16_t last[256];
     memset(last, 0xFF, sizeof(last));
 
     uint8_t * const data = hse->buffer;
-    int16_t * const index = hsi->index;
+    uint16_t * const index = hsi->index;
 
-    const uint16_t input_offset = get_input_offset(hse);
-    const uint16_t end = input_offset + hse->input_size;
+    const size_t input_offset = get_input_offset(hse);
+    const size_t end = input_offset + hse->input_size;
 
-    for (int16_t i = 0; i < end; i++) {
+    /* A 15-bit window fills the whole 16-bit position space, so the bound
+     * must be computed in size_t: `input_offset + input_size` is 65536 and
+     * does not fit in a uint16_t. */
+    for (size_t i = 0; i < end; i++) {
         uint8_t v = data[i];
-        int16_t lv = last[v];
+        uint16_t lv = last[v];
         index[i] = lv;
-        last[v] = i;
+        last[v] = (uint16_t)i;
     }
 #else
     (void)hse;
@@ -465,9 +476,9 @@ static uint16_t find_longest_match(heatshrink_encoder *hse, uint16_t start,
     uint8_t * const needlepoint = &buf[end];
 #if HEATSHRINK_USE_INDEX
     struct hs_index *hsi = HEATSHRINK_ENCODER_INDEX(hse);
-    int16_t pos = hsi->index[end];
+    uint16_t pos = hsi->index[end];
 
-    while (pos - (int16_t)start >= 0) {
+    while ((pos != MATCH_NOT_FOUND) && (pos >= start)) {
         uint8_t * const pospoint = &buf[pos];
 
         /* Only check matches that will potentially beat the current maxlen.
@@ -484,13 +495,15 @@ static uint16_t find_longest_match(heatshrink_encoder *hse, uint16_t start,
 
         if (len > match_maxlen) {
             match_maxlen = len;
-            match_index = (uint16_t)pos;
+            match_index = pos;
             if (len == maxlen) { break; } /* won't find better */
         }
         pos = hsi->index[pos];
     }
 #else    
-    for (int16_t pos=end - 1; pos - (int16_t)start >= 0; pos--) {
+    /* The 15-bit window can use every value of a 16-bit position, so the
+     * loop counter has to be wide enough to go below zero. */
+    for (int32_t pos = (int32_t)end - 1; pos >= (int32_t)start; pos--) {
         uint8_t * const pospoint = &buf[pos];
         if ((pospoint[match_maxlen] == needlepoint[match_maxlen])
             && (*pospoint == *needlepoint)) {
@@ -503,7 +516,7 @@ static uint16_t find_longest_match(heatshrink_encoder *hse, uint16_t start,
             }
             if (len > match_maxlen) {
                 match_maxlen = len;
-                match_index = pos;
+                match_index = (uint16_t)pos;
                 if (len == maxlen) { break; } /* don't keep searching */
             }
         }

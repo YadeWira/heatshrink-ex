@@ -6,6 +6,10 @@
 #include "heatshrink_common.h"
 #include "heatshrink_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum {
     HSER_SINK_OK,               /* data sunk into input buffer */
     HSER_SINK_ERROR_NULL=-1,    /* NULL argument */
@@ -32,9 +36,13 @@ typedef enum {
     ((HSE)->lookahead_sz2)
 #define HEATSHRINK_ENCODER_INDEX(HSE) \
     ((HSE)->search_index)
+/* Positions in the index are 16 bit wide, and the maximum window (15 bits)
+ * makes the input buffer reach offset 65535, so the end-of-list marker must
+ * not collide with a real position. Positions are always strictly smaller
+ * than the entry that points to them, so 0xFFFF can never be a valid entry. */
 struct hs_index {
-    uint16_t size;
-    int16_t index[];
+    size_t size;
+    uint16_t index[1];          /* actually `size / sizeof(uint16_t)` entries */
 };
 #else
 #define HEATSHRINK_ENCODER_WINDOW_BITS(_) \
@@ -44,8 +52,8 @@ struct hs_index {
 #define HEATSHRINK_ENCODER_INDEX(HSE) \
     (&(HSE)->search_index)
 struct hs_index {
-    uint16_t size;
-    int16_t index[2 << HEATSHRINK_STATIC_WINDOW_BITS];
+    size_t size;
+    uint16_t index[2 << HEATSHRINK_STATIC_WINDOW_BITS];
 };
 #endif
 
@@ -67,7 +75,7 @@ typedef struct {
     struct hs_index *search_index;
 #endif
     /* input buffer and / sliding window for expansion */
-    uint8_t buffer[];
+    uint8_t buffer[1];          /* actually 2 << window_sz2 bytes */
 #else
     #if HEATSHRINK_USE_INDEX
         struct hs_index search_index;
@@ -94,7 +102,7 @@ void heatshrink_encoder_reset(heatshrink_encoder *hse);
  * INPUT_SIZE is set to the number of bytes actually sunk (in case a
  * buffer was filled.). */
 HSE_sink_res heatshrink_encoder_sink(heatshrink_encoder *hse,
-    uint8_t *in_buf, size_t size, size_t *input_size);
+    const uint8_t *in_buf, size_t size, size_t *input_size);
 
 /* Poll for output from the encoder, copying at most OUT_BUF_SIZE bytes into
  * OUT_BUF (setting *OUTPUT_SIZE to the actual amount copied). */
@@ -105,5 +113,9 @@ HSE_poll_res heatshrink_encoder_poll(heatshrink_encoder *hse,
  * If the return value is HSER_FINISH_MORE, there is still more output, so
  * call heatshrink_encoder_poll and repeat. */
 HSE_finish_res heatshrink_encoder_finish(heatshrink_encoder *hse);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,15 +1,58 @@
 # heatshrink Changes By Release
 
-## v0.4.2 - 2021-xx-yy
+## v0.4.2 - unreleased
+
+### Platform support
+
+Added a portable CMake build (Linux x86/x86_64/ARM/AArch64, Windows
+x86/x86_64 with MSVC or MinGW-w64, macOS) that installs the libraries and
+the headers and exports a `find_package(heatshrink CONFIG)` package.
+
+The command line tool no longer requires `<getopt.h>`, `<err.h>`,
+`<unistd.h>`, `ssize_t` or variable length arrays, so it builds with MSVC
+and on Windows 7 or newer. Standard input/output are switched to binary
+mode on Windows and the option parser is built in (bundled flags such as
+`-dv` and attached values such as `-w11` are supported, plus `-V`).
+
+Removed flexible array members from the public structs so that the library
+also compiles with MSVC in C mode; allocations now use `offsetof`.
+
+Added `extern "C"` guards to the public headers, so the library can be used
+from C++.
 
 ### API Changes
 
-None.
+`heatshrink_encoder_sink()` and `heatshrink_decoder_sink()` now take a
+`const uint8_t *` input buffer.
+
+The internal index (`struct hs_index`) uses `uint16_t` positions and a
+`size_t` size, which is required for 15-bit windows to work.
+
+`heatshrink_config.h` moved from `src/` to `include/`, so that installed
+headers can find it and out-of-tree builds do not need `-Isrc`.
 
 
 ### Bug Fixes
 
 Fixed fallthrough in getopt 'h'.
+
+Fixed a crash (out-of-bounds read in `find_longest_match`) and a possible
+infinite loop when finishing an encoder that had no input, e.g. when
+compressing an empty file. (Upstream issue #57, PR #87.)
+
+Fixed 15-bit windows (`-w 15`): the encoder used to emit literals only
+(9/8 expansion) and loop forever once the input buffer filled up, because
+positions in the search index overflowed a signed 16-bit integer. Indexing
+now uses unsigned 16-bit positions in both the indexed and the brute force
+search path. (Upstream issues #55 and #86, PR #88.)
+
+Fixed `heatshrink_decoder_poll()` returning `HSDR_POLL_MORE` when the
+output buffer was exactly as large as the decoded data, which made callers
+that retry on `MORE` spin forever. (Upstream issue #74.)
+
+Fixed a NULL dereference in the test suite: two tests allocated a decoder
+with lookahead bits equal to the window bits, which always fails, and then
+called `free()` on the NULL pointer. (Upstream issue #98.)
 
 
 ### Other Improvements

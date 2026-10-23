@@ -24,7 +24,8 @@ SUITE(properties);
 static void dump_buf(char *name, uint8_t *buf, size_t count) {
     for (size_t i = 0; i < count; i++) {
         uint8_t c = (uint8_t)buf[i];
-        printf("%s %zu: 0x%02x ('%c')\n", name, i, c, isprint(c) ? c : '.');
+        printf("%s %lu: 0x%02x ('%c')\n", name, (unsigned long)i, c,
+            isprint(c) ? c : '.');
     }
 }
 
@@ -285,7 +286,8 @@ TEST decoder_sink_should_reject_null_hsd_pointer(void) {
 
 TEST decoder_sink_should_reject_null_input_pointer(void) {
     heatshrink_decoder *hsd = heatshrink_decoder_alloc(256,
-        HEATSHRINK_MIN_WINDOW_BITS, 4);
+        HEATSHRINK_MIN_WINDOW_BITS, HEATSHRINK_MIN_LOOKAHEAD_BITS);
+    ASSERT(hsd);
     size_t count = 0;
     ASSERT_EQ(HSDR_SINK_ERROR_NULL, heatshrink_decoder_sink(hsd, NULL, 6, &count));
     heatshrink_decoder_free(hsd);
@@ -295,7 +297,8 @@ TEST decoder_sink_should_reject_null_input_pointer(void) {
 TEST decoder_sink_should_reject_null_count_pointer(void) {
     uint8_t input[] = {0,1,2,3,4,5};
     heatshrink_decoder *hsd = heatshrink_decoder_alloc(256,
-        HEATSHRINK_MIN_WINDOW_BITS, 4);
+        HEATSHRINK_MIN_WINDOW_BITS, HEATSHRINK_MIN_LOOKAHEAD_BITS);
+    ASSERT(hsd);
     ASSERT_EQ(HSDR_SINK_ERROR_NULL, heatshrink_decoder_sink(hsd, input, 6, NULL));
     heatshrink_decoder_free(hsd);
     PASS();
@@ -682,7 +685,7 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
         HSE_sink_res esres = heatshrink_encoder_sink(hse, &input[sunk], input_size - sunk, &count);
         ASSERT(esres >= 0);
         sunk += count;
-        if (cfg->log_lvl > 1) printf("^^ sunk %zd\n", count);
+        if (cfg->log_lvl > 1) printf("^^ sunk %lu\n", (unsigned long)count);
         if (sunk == input_size) {
             ASSERT_EQ(HSER_FINISH_MORE, heatshrink_encoder_finish(hse));
         }
@@ -692,7 +695,7 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
             pres = heatshrink_encoder_poll(hse, &comp[polled], comp_sz - polled, &count);
             ASSERT(pres >= 0);
             polled += count;
-            if (cfg->log_lvl > 1) printf("^^ polled %zd\n", count);
+            if (cfg->log_lvl > 1) printf("^^ polled %lu\n", (unsigned long)count);
         } while (pres == HSER_POLL_MORE);
         ASSERT_EQ(HSER_POLL_EMPTY, pres);
         if (polled >= comp_sz) FAILm("compression should never expand that much");
@@ -700,7 +703,8 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
             ASSERT_EQ(HSER_FINISH_DONE, heatshrink_encoder_finish(hse));
         }
     }
-    if (cfg->log_lvl > 0) printf("in: %u compressed: %zu ", input_size, polled);
+    if (cfg->log_lvl > 0) printf("in: %u compressed: %lu ", input_size,
+        (unsigned long)polled);
     size_t compressed_size = polled;
     sunk = 0;
     polled = 0;
@@ -712,7 +716,7 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
     while (sunk < compressed_size) {
         ASSERT(heatshrink_decoder_sink(hsd, &comp[sunk], compressed_size - sunk, &count) >= 0);
         sunk += count;
-        if (cfg->log_lvl > 1) printf("^^ sunk %zd\n", count);
+        if (cfg->log_lvl > 1) printf("^^ sunk %lu\n", (unsigned long)count);
         if (sunk == compressed_size) {
             ASSERT_EQ(HSDR_FINISH_MORE, heatshrink_decoder_finish(hsd));
         }
@@ -724,7 +728,7 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
             ASSERT(pres >= 0);
             ASSERT(count > 0);
             polled += count;
-            if (cfg->log_lvl > 1) printf("^^ polled %zd\n", count);
+            if (cfg->log_lvl > 1) printf("^^ polled %lu\n", (unsigned long)count);
         } while (pres == HSDR_POLL_MORE);
         ASSERT_EQ(HSDR_POLL_EMPTY, pres);
         if (sunk == compressed_size) {
@@ -733,11 +737,12 @@ static int compress_and_expand_and_check(uint8_t *input, uint32_t input_size, cf
         }
 
         if (polled > input_size) {
-            printf("\nExpected %zd, got %zu\n", (size_t)input_size, polled);
+            printf("\nExpected %lu, got %lu\n", (unsigned long)input_size,
+                (unsigned long)polled);
             FAILm("Decompressed data is larger than original input");
         }
     }
-    if (cfg->log_lvl > 0) printf("decompressed: %zu\n", polled);
+    if (cfg->log_lvl > 0) printf("decompressed: %lu\n", (unsigned long)polled);
     if (polled != input_size) {
         FAILm("Decompressed length does not match original input length");
     }
@@ -881,17 +886,20 @@ static void fill_with_pseudorandom_letters(uint8_t *buf, uint32_t size, uint32_t
 }
 
 TEST pseudorandom_data_should_match(uint32_t size, uint32_t seed, cfg_info *cfg) {
-    uint8_t input[size];
+    uint8_t *input = malloc(size);
+    if (input == NULL) FAILm("malloc fail");
     if (cfg->log_lvl > 0) {
-        printf("\n-- size %u, seed %u, input buf %zu\n",
-            size, seed, cfg->decoder_input_buffer_size);
+        printf("\n-- size %u, seed %u, input buf %lu\n",
+            size, seed, (unsigned long)cfg->decoder_input_buffer_size);
     }
     fill_with_pseudorandom_letters(input, size, seed);
-    return compress_and_expand_and_check(input, size, cfg);
+    int res = compress_and_expand_and_check(input, size, cfg);
+    free(input);
+    return res;
 }
 
 TEST small_input_buffer_should_not_impact_decoder_correctness(void) {
-    int size = 5;
+    enum { size = 5 };
     uint8_t input[size];
     cfg_info cfg;
     cfg.log_lvl = 0;
@@ -906,7 +914,7 @@ TEST small_input_buffer_should_not_impact_decoder_correctness(void) {
 TEST regression_backreference_counters_should_not_roll_over(void) {
     /* Searching was scanning the entire context buffer, not just
      * the maximum range addressable by the backref index.*/
-    uint32_t size = 337;
+    enum { size = 337 };
     uint32_t seed = 3;
     uint8_t input[size];
     fill_with_pseudorandom_letters(input, size, seed);
@@ -923,7 +931,7 @@ TEST regression_index_fail(void) {
      *
      * This has something to do with bad data at the very last
      * byte being indexed, due to spillover. */
-    uint32_t size = 507;
+    enum { size = 507 };
     uint32_t seed = 3;
     uint8_t input[size];
     fill_with_pseudorandom_letters(input, size, seed);
@@ -938,16 +946,158 @@ TEST regression_index_fail(void) {
 TEST sixty_four_k(void) {
     /* Regression: An input buffer of 64k should not cause an
      * overflow that leads to an infinite loop. */
-    uint32_t size = 64 * 1024;
+    enum { size = 64 * 1024 };
     uint32_t seed = 1;
-    uint8_t input[size];
+    uint8_t *input = malloc(size);
+    if (input == NULL) FAILm("malloc fail");
     fill_with_pseudorandom_letters(input, size, seed);
     cfg_info cfg;
     cfg.log_lvl = 0;
     cfg.window_sz2 = 8;
     cfg.lookahead_sz2 = 3;
     cfg.decoder_input_buffer_size = 64;
-    return compress_and_expand_and_check(input, size, &cfg);
+    int res = compress_and_expand_and_check(input, size, &cfg);
+    free(input);
+    return res;
+}
+
+TEST encoder_should_handle_empty_input(void) {
+    /* Regression: finishing with an empty input buffer used to underflow the
+     * search loop bound and read past the input buffer (issue #57, PR #87). */
+    heatshrink_encoder *hse = heatshrink_encoder_alloc(8, 3);
+    ASSERT(hse);
+    uint8_t out[16];
+    size_t count = 0;
+
+    memset(out, 0, sizeof(out));
+    ASSERT_EQ(HSER_FINISH_MORE, heatshrink_encoder_finish(hse));
+    HSE_poll_res pres;
+    do {
+        pres = heatshrink_encoder_poll(hse, out, sizeof(out), &count);
+        ASSERT(pres >= 0);
+    } while (pres == HSER_POLL_MORE);
+    ASSERT_EQ(HSER_POLL_EMPTY, pres);
+    ASSERT_EQ(HSER_FINISH_DONE, heatshrink_encoder_finish(hse));
+    heatshrink_encoder_free(hse);
+
+    heatshrink_decoder *hsd = heatshrink_decoder_alloc(64, 8, 3);
+    ASSERT(hsd);
+    uint8_t decomp[16];
+    size_t polled = 0;
+    ASSERT_EQ(HSDR_FINISH_DONE, heatshrink_decoder_finish(hsd));
+    ASSERT_EQ(HSDR_POLL_EMPTY,
+        heatshrink_decoder_poll(hsd, decomp, sizeof(decomp), &polled));
+    ASSERT(polled == 0);
+    heatshrink_decoder_free(hsd);
+    PASS();
+}
+
+TEST maximum_window_should_find_matches(void) {
+    /* Regression (issues #86, #55): with a 15-bit window the index overflowed,
+     * so the encoder silently emitted literals only (9/8 expansion) and
+     * looped forever once the input buffer filled up. */
+    enum { N = 64 * 1024 };
+    uint8_t *input = malloc(N);
+    uint8_t *comp = malloc(N * 2);
+    if (input == NULL || comp == NULL) FAILm("malloc fail");
+    fill_with_pseudorandom_letters(input, N, 7);
+
+    heatshrink_encoder *hse = heatshrink_encoder_alloc(
+        HEATSHRINK_MAX_WINDOW_BITS, 4);
+    ASSERT(hse);
+
+    size_t sunk = 0, polled = 0, count = 0;
+    while (sunk < (size_t)N) {
+        ASSERT(heatshrink_encoder_sink(hse, &input[sunk], N - sunk, &count) >= 0);
+        sunk += count;
+        HSE_poll_res pres;
+        do {
+            pres = heatshrink_encoder_poll(hse, &comp[polled],
+                N * 2 - polled, &count);
+            ASSERT(pres >= 0);
+            polled += count;
+        } while (pres == HSER_POLL_MORE);
+    }
+    ASSERT_EQ(HSER_FINISH_MORE, heatshrink_encoder_finish(hse));
+    HSE_poll_res pres;
+    do {
+        pres = heatshrink_encoder_poll(hse, &comp[polled], N * 2 - polled, &count);
+        ASSERT(pres >= 0);
+        polled += count;
+    } while (pres == HSER_POLL_MORE);
+    ASSERT_EQ(HSER_POLL_EMPTY, pres);
+    ASSERT_EQ(HSER_FINISH_DONE, heatshrink_encoder_finish(hse));
+    heatshrink_encoder_free(hse);
+
+    /* Literal-only output would be exactly 9/8 of the input. */
+    ASSERT(polled > 0);
+    ASSERT(polled < (size_t)(N * 9 / 8));
+
+    cfg_info cfg;
+    cfg.log_lvl = 0;
+    cfg.window_sz2 = HEATSHRINK_MAX_WINDOW_BITS;
+    cfg.lookahead_sz2 = 4;
+    cfg.decoder_input_buffer_size = 256;
+    int res = compress_and_expand_and_check(input, N, &cfg);
+    free(input);
+    free(comp);
+    return res;
+}
+
+TEST decoder_poll_should_return_empty_if_output_buffer_exactly_fits(void) {
+    /* Regression (issue #74): when the output buffer is exactly as large as
+     * the decoded data, poll used to keep returning MORE, so callers that
+     * retry on MORE spun forever. */
+    static const char data[] = "the quick brown fox jumps over the lazy dog ";
+    const size_t data_size = sizeof(data);
+    uint8_t comp[128];
+    uint8_t out[sizeof(data)];
+
+    heatshrink_encoder *hse = heatshrink_encoder_alloc(8, 4);
+    ASSERT(hse);
+    size_t sunk = 0, polled = 0, count = 0;
+    while (sunk < data_size) {
+        ASSERT(heatshrink_encoder_sink(hse, (const uint8_t *)&data[sunk],
+            data_size - sunk, &count) >= 0);
+        sunk += count;
+        HSE_poll_res pres;
+        do {
+            pres = heatshrink_encoder_poll(hse, &comp[polled],
+                sizeof(comp) - polled, &count);
+            ASSERT(pres >= 0);
+            polled += count;
+        } while (pres == HSER_POLL_MORE);
+    }
+    while (heatshrink_encoder_finish(hse) != HSER_FINISH_DONE) {
+        HSE_poll_res pres;
+        do {
+            pres = heatshrink_encoder_poll(hse, &comp[polled],
+                sizeof(comp) - polled, &count);
+            ASSERT(pres >= 0);
+            polled += count;
+        } while (pres == HSER_POLL_MORE);
+    }
+    heatshrink_encoder_free(hse);
+
+    heatshrink_decoder *hsd = heatshrink_decoder_alloc(256, 8, 4);
+    ASSERT(hsd);
+    size_t csunk = 0;
+    ASSERT(heatshrink_decoder_sink(hsd, comp, polled, &csunk) >= 0);
+    ASSERT_EQ(polled, csunk);
+
+    size_t outp = 0;
+    HSD_poll_res pres;
+    do {
+        pres = heatshrink_decoder_poll(hsd, &out[outp], data_size - outp, &count);
+        ASSERT(pres >= 0);
+        outp += count;
+        ASSERT(outp <= data_size);
+    } while (pres == HSDR_POLL_MORE);
+    ASSERT_EQ(HSDR_POLL_EMPTY, pres);
+    ASSERT_EQ(data_size, outp);
+    ASSERT(memcmp(out, data, data_size) == 0);
+    heatshrink_decoder_free(hsd);
+    PASS();
 }
 
 SUITE(regression) {
@@ -956,6 +1106,9 @@ SUITE(regression) {
     RUN_TEST(regression_backreference_counters_should_not_roll_over);
     RUN_TEST(regression_index_fail);
     RUN_TEST(sixty_four_k);
+    RUN_TEST(encoder_should_handle_empty_input);
+    RUN_TEST(maximum_window_should_find_matches);
+    RUN_TEST(decoder_poll_should_return_empty_if_output_buffer_exactly_fits);
 }
 
 SUITE(integration) {
