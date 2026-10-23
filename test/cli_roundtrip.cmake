@@ -114,18 +114,22 @@ run_framed("framed-explicit-match" "-w 13 -l 5" "-w 13 -l 5" "${WORKDIR}/input.t
 run_framed("framed-empty" "" "" "${WORKDIR}/empty.bin")
 
 # -c adds the uncompressed size and CRC32 to the frame; decoding verifies both.
-run_framed("summed" "-c -w 12 -l 5" "" "${WORKDIR}/input.txt")
+# Use a file without newlines so its content (and therefore its size and CRC)
+# is identical on every platform, including Windows.
+string(REPEAT "The quick brown fox jumps over the lazy dog. 0123456789" 400 _noeol)
+file(WRITE "${WORKDIR}/sumtest.bin" "${_noeol}")
+run_framed("summed" "-c -w 12 -l 5" "" "${WORKDIR}/sumtest.bin")
 
-# Check the extension fields against known values (input.txt is 22,400 bytes
-# and its zlib CRC32 is 0xf5b13ad2; both stored little-endian).
+# Check the extension fields against known values: sumtest.bin is 22,000 bytes
+# and its zlib CRC32 is 0x62e2aedc; both are stored little-endian.
 file(READ "${WORKDIR}/summed.hs" _hdr HEX LIMIT 20)
 string(SUBSTRING "${_hdr}" 16 16 _size_field)
 string(SUBSTRING "${_hdr}" 32 8 _crc_field)
-if(NOT _size_field STREQUAL "8057000000000000")
-    message(FATAL_ERROR "frame size field is ${_size_field}, expected 8057000000000000")
+if(NOT _size_field STREQUAL "f055000000000000")
+    message(FATAL_ERROR "frame size field is ${_size_field}, expected f055000000000000")
 endif()
-if(NOT _crc_field STREQUAL "f5b13ad2")
-    message(FATAL_ERROR "frame CRC32 field is ${_crc_field}, expected f5b13ad2")
+if(NOT _crc_field STREQUAL "62e2aedc")
+    message(FATAL_ERROR "frame CRC32 field is ${_crc_field}, expected 62e2aedc")
 endif()
 
 # Extra bytes after the payload must be detected (decoded size changes).
