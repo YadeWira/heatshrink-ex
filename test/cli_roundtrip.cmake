@@ -124,7 +124,7 @@ if(NOT _res EQUAL 0)
     message(FATAL_ERROR "raw encode failed: ${_err}")
 endif()
 expect_failure("require-frame-on-raw" -d -f "${WORKDIR}/raw.hs")
-file(WRITE "${WORKDIR}/truncated.hs" "HSHR\x01")
+file(WRITE "${WORKDIR}/truncated.hs" "HSHR1")   # 5 printable bytes, magic + partial header
 expect_failure("truncated-header" -d "${WORKDIR}/truncated.hs" "${WORKDIR}/truncated.out")
 # A header with a bogus version must be rejected (all bytes printable so the
 # script can write them without binary escapes).
