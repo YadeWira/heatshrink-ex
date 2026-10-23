@@ -1,1 +1,12 @@
 build/
+
+# CMake / out-of-source builds
+build/
+build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.ninja
+compile_commands.json

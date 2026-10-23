@@ -69,18 +69,27 @@ ${CORPUS_ARCHIVE}:
 	${DL} ${CORPUS_URL}
 
 # Installation
+#
+# NOTE: this Makefile only works on POSIX hosts. CMake is the supported build
+# system for Linux (x86, x86_64, ARM), macOS and Windows (MSVC and MinGW):
+#
+#     cmake -S . -B build && cmake --build build
+#     cmake --install build --prefix /usr/local
+#
+# `make install` is kept for convenience and installs the same files.
 PREFIX ?=	/usr/local
 INSTALL ?=	install
 RM ?=		rm
 
-install: libraries heatshrink
-	${INSTALL} -c heatshrink ${PREFIX}/bin/
-	${INSTALL} -c libheatshrink_static.a ${PREFIX}/lib/
-	${INSTALL} -c libheatshrink_dynamic.a ${PREFIX}/lib/
-	${INSTALL} -c heatshrink_common.h ${PREFIX}/include/
-	${INSTALL} -c heatshrink_config.h ${PREFIX}/include/
-	${INSTALL} -c heatshrink_encoder.h ${PREFIX}/include/
-	${INSTALL} -c heatshrink_decoder.h ${PREFIX}/include/
+install: all
+	${INSTALL} -d ${PREFIX}/bin ${PREFIX}/lib ${PREFIX}/include
+	${INSTALL} -c ${BUILD}/heatshrink ${PREFIX}/bin/
+	${INSTALL} -c ${BUILD}/libheatshrink_static.a ${PREFIX}/lib/
+	${INSTALL} -c ${BUILD}/libheatshrink_dynamic.a ${PREFIX}/lib/
+	${INSTALL} -c ${INCLUDE}/heatshrink_common.h ${PREFIX}/include/
+	${INSTALL} -c ${INCLUDE}/heatshrink_config.h ${PREFIX}/include/
+	${INSTALL} -c ${INCLUDE}/heatshrink_encoder.h ${PREFIX}/include/
+	${INSTALL} -c ${INCLUDE}/heatshrink_decoder.h ${PREFIX}/include/
 
 uninstall:
 	${RM} -f ${PREFIX}/lib/libheatshrink_static.a
@@ -156,6 +165,6 @@ ${BUILD}/static/: | ${BUILD}
 ${BUILD}/dynamic/: | ${BUILD}
 	mkdir ${BUILD}/dynamic
 
-${BUILD}/*.o: Makefile ${INCLUDE}/*.h ${SRC}/*.h
+${BUILD}/*.o: Makefile ${INCLUDE}/*.h
 
 

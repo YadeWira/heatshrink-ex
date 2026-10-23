@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/heatshrinkTargets.cmake")
+
+# `heatshrink::heatshrink` is an alias for the dynamically allocating library,
+# matching the default used by the command line tool. ALIAS targets are not
+# exported, so recreate it here.
+if(TARGET heatshrink::heatshrink_dynamic AND NOT TARGET heatshrink::heatshrink)
+    add_library(heatshrink::heatshrink INTERFACE IMPORTED)
+    set_target_properties(heatshrink::heatshrink PROPERTIES
+        INTERFACE_LINK_LIBRARIES heatshrink::heatshrink_dynamic)
+endif()
+
+check_required_components(heatshrink)

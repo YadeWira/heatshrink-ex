@@ -36,6 +36,69 @@ parameters when run without any arguments -- to see usage info, use:
     $ heatshrink -h
 
 
+## Supported platforms
+
+The library and the command line tool build and run on:
+
+| Platform | Architectures | Compiler / notes |
+|---|---|---|
+| Linux | x86 (i686), x86_64, ARMv7, AArch64 | GCC or Clang |
+| Windows | x86 (32 bit), x86_64 | MSVC 2017+ or MinGW-w64; **Windows 7 SP1 or newer** |
+| macOS | Intel and Apple Silicon | Clang (no platform specific code) |
+
+The source is plain C99 and the only dependency is the C standard library.
+There are no POSIX-only calls in the command line tool: file I/O uses
+`fopen`/`fread`/`fwrite` in binary mode, and the option parser is built in
+(no `getopt`), so the same code builds with MSVC, MinGW and on Unix-like
+systems. On Windows, standard input and output are switched to binary mode
+before any data is read or written.
+
+Windows executables and libraries are tested on Windows 7 SP1 x86 (natively),
+and under Wine for both x86 and x86_64. ARM builds are verified under QEMU
+user mode.
+
+
+## Building
+
+CMake 3.15 or newer is the supported build system (the plain `Makefile` is a
+convenience for POSIX hosts):
+
+    $ cmake -S . -B build
+    $ cmake --build build
+    $ ctest --test-dir build
+    $ cmake --install build --prefix /usr/local
+
+Build options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `HEATSHRINK_BUILD_CLI` | `ON` | Build the `heatshrink` command line tool |
+| `HEATSHRINK_BUILD_TESTS` | `ON` | Build the test suite (CTest) |
+| `HEATSHRINK_USE_INDEX` | `ON` | Use the search index (faster, more RAM) |
+| `HEATSHRINK_WERROR` | `OFF` | Treat compiler warnings as errors |
+| `BUILD_SHARED_LIBS` | `OFF` | Build `.so`/`.dylib`/`.dll` instead of static libraries |
+
+Two libraries are always produced: `heatshrink_static` (no dynamic
+allocation, configured by `heatshrink_config.h`) and `heatshrink_dynamic`
+(`HEATSHRINK_DYNAMIC_ALLOC=1`). On MSVC, `CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`
+is enabled so that a shared build produces a usable DLL.
+
+Cross compiling only needs a compiler and `CMAKE_SYSTEM_NAME`, for example:
+
+    $ cmake -S . -B build-x86 -DCMAKE_SYSTEM_NAME=Windows \
+        -DCMAKE_C_COMPILER=i686-w64-mingw32-gcc
+    $ cmake -S . -B build-arm64 -DCMAKE_SYSTEM_NAME=Linux \
+        -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc
+
+Projects that install heatshrink can consume it with `find_package`:
+
+```cmake
+find_package(heatshrink 0.4 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE heatshrink::heatshrink) # dynamic
+# ... or heatshrink::heatshrink_static for the no-alloc variant
+```
+
+
 ### Basic Usage
 
 1. Allocate a `heatshrink_encoder` or `heatshrink_decoder` state machine
