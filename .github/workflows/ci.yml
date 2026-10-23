@@ -13,6 +13,7 @@ jobs:
   unix:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout || 35 }}
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,18 @@ jobs:
             os: ubuntu-latest
             cc: gcc
             extra: -DBUILD_SHARED_LIBS=ON
+          - name: linux-debug
+            os: ubuntu-latest
+            cc: gcc
+            extra: -DCMAKE_BUILD_TYPE=Debug
+          - name: linux-sanitizers
+            os: ubuntu-latest
+            cc: gcc
+            timeout: 60
+            extra: >-
+              -DCMAKE_BUILD_TYPE=Debug
+              -DCMAKE_C_FLAGS=-fsanitize=address,undefined
+              -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined
           - name: macos-clang
             os: macos-latest
             cc: clang
@@ -40,7 +53,9 @@ jobs:
 
       - name: Install packages
         if: matrix.packages != ''
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo -E apt-get update && sudo -E apt-get install -y --no-install-recommends ${{ matrix.packages }}
 
       - name: Configure
         env:
@@ -56,6 +71,7 @@ jobs:
   windows-msvc:
     name: windows-msvc-${{ matrix.arch }}
     runs-on: windows-latest
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +91,7 @@ jobs:
   windows-mingw:
     name: windows-mingw-${{ matrix.msystem }}
     runs-on: windows-latest
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -107,6 +124,7 @@ jobs:
   linux-arm-cross:
     name: linux-${{ matrix.arch }}-cross
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -123,7 +141,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install packages
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo -E apt-get update && sudo -E apt-get install -y --no-install-recommends ${{ matrix.packages }}
 
       - name: Configure
         run: >

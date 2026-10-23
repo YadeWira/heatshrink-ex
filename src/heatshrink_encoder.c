@@ -106,6 +106,7 @@ heatshrink_encoder *heatshrink_encoder_alloc(uint8_t window_sz2,
 }
 
 void heatshrink_encoder_free(heatshrink_encoder *hse) {
+    if (hse == NULL) { return; }
     size_t buf_sz = (2U << HEATSHRINK_ENCODER_WINDOW_BITS(hse));
 #if HEATSHRINK_USE_INDEX
     size_t index_sz = offsetof(struct hs_index, index) + hse->search_index->size;

@@ -367,7 +367,8 @@ TEST decoder_poll_should_reject_null_output_buffer(void) {
 TEST decoder_poll_should_reject_null_output_size_pointer(void) {
     uint8_t output[256];
     heatshrink_decoder *hsd = heatshrink_decoder_alloc(256,
-        HEATSHRINK_MIN_WINDOW_BITS, 4);
+        HEATSHRINK_MIN_WINDOW_BITS, HEATSHRINK_MIN_LOOKAHEAD_BITS);
+    ASSERT(hsd);
     HSD_poll_res res = heatshrink_decoder_poll(hsd, output, 256, NULL);
     ASSERT_EQ(HSDR_POLL_ERROR_NULL, res);
     heatshrink_decoder_free(hsd);
