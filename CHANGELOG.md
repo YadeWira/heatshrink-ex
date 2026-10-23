@@ -1,6 +1,6 @@
 # heatshrink Changes By Release
 
-## v0.4.2 - unreleased
+## v0.5.0 - 2026-10-22
 
 ### Platform support
 

@@ -1,5 +1,8 @@
 build/
 
+# Release artifacts
+dist/
+
 # CMake / out-of-source builds
 build/
 build-*/
