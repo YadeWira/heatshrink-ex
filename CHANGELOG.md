@@ -1,5 +1,27 @@
 # heatshrink Changes By Release
 
+## v0.6.0 - 2026-10-23
+
+### New
+
+Optional frame header for the command line tool (`-f` when encoding). It is
+eight bytes:
+
+    0..3  'H' 'S' 'H' 'R'      magic
+    4     version (1)
+    5     flags (0 in version 1, reserved)
+    6     window_sz2 (4..15)
+    7     lookahead_sz2 (3..14)
+
+The payload stays the raw heatshrink bit stream, byte compatible with upstream
+0.4.x. Decoding detects the header automatically and takes `-w`/`-l` from it,
+so `heatshrink -d file.hs` is enough; `-r` forces raw interpretation, `-f` on
+decode requires a frame, and a command line `-w`/`-l` that contradicts the
+header is an error instead of a silent mis-decode.
+
+Raw output is still the default, so existing files, scripts and embedded
+pipelines are unaffected.
+
 ## v0.5.0 - 2026-10-22
 
 ### Platform support

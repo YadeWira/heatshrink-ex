@@ -31,6 +31,24 @@
 #  define HS_SET_BINARY(fp) ((void)0)
 #endif
 
+/* Optional frame header. The bit stream stays raw and byte compatible with
+ * upstream heatshrink 0.4.x; the frame only records the settings that the
+ * stream itself cannot express. Layout (8 bytes, all values literal):
+ *
+ *   0..3  'H' 'S' 'H' 'R'      magic
+ *   4     version (1)
+ *   5     flags (0 in version 1, reserved)
+ *   6     window_sz2 (4..15)
+ *   7     lookahead_sz2 (3..14)
+ *
+ * Frames are only written when asked for (-f), so existing files and
+ * embedded pipelines are unaffected. The decoder detects a frame by its
+ * magic; -r forces raw interpretation for the (very unlikely) raw stream that
+ * happens to start with the magic. */
+#define HS_FRAME_MAGIC "HSHR"
+#define HS_FRAME_VERSION 1
+#define HS_FRAME_HEADER_SIZE 8
+
 #define DEF_WINDOW_SZ2 11
 #define DEF_LOOKAHEAD_SZ2 4
 #define DEF_DECODER_INPUT_BUFFER_SIZE 256
@@ -67,6 +85,10 @@ typedef struct {
     size_t decoder_input_buffer_size;
     size_t buffer_size;
     int verbose;
+    int frame;                  /* -f: write / require a frame header */
+    int raw;                    /* -r: never interpret a frame header */
+    int window_set;             /* -w was given explicitly */
+    int lookahead_set;          /* -l was given explicitly */
     int out_to_stdout;          /* report goes to stderr in that case */
     Operation cmd;
     const char *in_fname;
@@ -109,6 +131,9 @@ static void usage(FILE *stream) {
         " -e        encode (compress, default)\n"
         " -d        decode (decompress)\n"
         " -v        verbose (print input & output sizes, compression ratio, etc.)\n"
+        " -f        encode: write an 8-byte frame header with -w and -l\n"
+        "           decode: require a frame header (it is auto-detected anyway)\n"
+        " -r        decode: treat the input as raw, never as a framed stream\n"
         "\n"
         " -w SIZE   Base-2 log of LZSS sliding window size (default: %d)\n"
         "\n"
@@ -295,6 +320,19 @@ static int encoder_sink_read(config *cfg, heatshrink_encoder *hse,
     return 0;
 }
 
+static void write_frame_header(config *cfg) {
+    uint8_t hdr[HS_FRAME_HEADER_SIZE];
+    size_t sunk = 0;
+
+    memcpy(hdr, HS_FRAME_MAGIC, 4);
+    hdr[4] = HS_FRAME_VERSION;
+    hdr[5] = 0;                 /* flags */
+    hdr[6] = cfg->window_sz2;
+    hdr[7] = cfg->lookahead_sz2;
+
+    if (!handle_sink(cfg->out, hdr, sizeof(hdr), &sunk)) { die_errno("write"); }
+}
+
 static int encode(config *cfg) {
     uint8_t window_sz2 = cfg->window_sz2;
     size_t window_sz = (size_t)1 << window_sz2;
@@ -305,6 +343,8 @@ static int encode(config *cfg) {
     if (hse == NULL) { die("failed to init encoder: bad settings"); }
 
     io_handle *in = cfg->in;
+
+    if (cfg->frame) { write_frame_header(cfg); }
 
     /* Process input until end of stream */
     while (1) {
@@ -368,7 +408,71 @@ static int decoder_sink_read(config *cfg, heatshrink_decoder *hsd,
     return 0;
 }
 
+/* Returns 1 if a valid frame header was consumed, 0 if the input is a raw
+ * stream. Exits on a malformed header, or on a raw stream when -f was given. */
+static int read_frame_header(config *cfg) {
+    uint8_t *p = NULL;
+    size_t n = 0;
+
+    if (!handle_read(cfg->in, HS_FRAME_HEADER_SIZE, &p, &n)) { die_errno("read"); }
+
+    if ((n < 4) || (memcmp(p, HS_FRAME_MAGIC, 4) != 0)) {
+        if (cfg->frame) {
+            die("input is not a framed heatshrink stream (bad magic)");
+        }
+        return 0;
+    }
+    if (cfg->raw) {
+        fprintf(stderr, "heatshrink: warning: -r given, decoding as a raw stream\n");
+        return 0;
+    }
+    if (n < HS_FRAME_HEADER_SIZE) { die("truncated frame header"); }
+
+    uint8_t version = p[4];
+    uint8_t flags = p[5];
+    uint8_t window_sz2 = p[6];
+    uint8_t lookahead_sz2 = p[7];
+
+    if (version != HS_FRAME_VERSION) {
+        die("unsupported frame version %u (this build knows version %u)",
+            (unsigned)version, (unsigned)HS_FRAME_VERSION);
+    }
+    if (flags != 0) {
+        die("unsupported frame flags 0x%02x", (unsigned)flags);
+    }
+    if ((window_sz2 < HEATSHRINK_MIN_WINDOW_BITS)
+        || (window_sz2 > HEATSHRINK_MAX_WINDOW_BITS)) {
+        die("frame header has invalid window bits: %u", (unsigned)window_sz2);
+    }
+    if ((lookahead_sz2 < HEATSHRINK_MIN_LOOKAHEAD_BITS)
+        || (lookahead_sz2 >= window_sz2)) {
+        die("frame header has invalid lookahead bits: %u", (unsigned)lookahead_sz2);
+    }
+    if (cfg->window_set && (cfg->window_sz2 != window_sz2)) {
+        die("frame header says -w %u but the command line says -w %u",
+            (unsigned)window_sz2, (unsigned)cfg->window_sz2);
+    }
+    if (cfg->lookahead_set && (cfg->lookahead_sz2 != lookahead_sz2)) {
+        die("frame header says -l %u but the command line says -l %u",
+            (unsigned)lookahead_sz2, (unsigned)cfg->lookahead_sz2);
+    }
+
+    cfg->window_sz2 = window_sz2;
+    cfg->lookahead_sz2 = lookahead_sz2;
+
+    if (!handle_drop(cfg->in, HS_FRAME_HEADER_SIZE)) {
+        die("internal error: bad drop");
+    }
+    if (cfg->verbose) {
+        fprintf(stderr, "framed stream: -w %u -l %u\n",
+            (unsigned)window_sz2, (unsigned)lookahead_sz2);
+    }
+    return 1;
+}
+
 static int decode(config *cfg) {
+    if (read_frame_header(cfg)) { /* settings now come from the header */ }
+
     uint8_t window_sz2 = cfg->window_sz2;
     size_t window_sz = (size_t)1 << window_sz2;
     uint8_t *out_buf = xmalloc(cfg->buffer_size);
@@ -444,6 +548,10 @@ static void proc_args(config *cfg, int argc, char **argv) {
     cfg->decoder_input_buffer_size = DEF_DECODER_INPUT_BUFFER_SIZE;
     cfg->cmd = OP_ENC;
     cfg->verbose = 0;
+    cfg->frame = 0;
+    cfg->raw = 0;
+    cfg->window_set = 0;
+    cfg->lookahead_set = 0;
     cfg->in_fname = "-";
     cfg->out_fname = "-";
 
@@ -503,6 +611,12 @@ static void proc_args(config *cfg, int argc, char **argv) {
             case 'v':
                 cfg->verbose++;
                 continue;
+            case 'f':
+                cfg->frame = 1;
+                continue;
+            case 'r':
+                cfg->raw = 1;
+                continue;
             case 'w':
             case 'l':
             case 'i':
@@ -528,9 +642,11 @@ static void proc_args(config *cfg, int argc, char **argv) {
             if (opt == 'w') {
                 if (!parse_uint("-w", value, 0, 255, &v)) { exit(EXIT_FAILURE); }
                 cfg->window_sz2 = (uint8_t)v;
+                cfg->window_set = 1;
             } else if (opt == 'l') {
                 if (!parse_uint("-l", value, 0, 255, &v)) { exit(EXIT_FAILURE); }
                 cfg->lookahead_sz2 = (uint8_t)v;
+                cfg->lookahead_set = 1;
             } else {            /* 'i' */
                 if (!parse_uint("-i", value, 1, 0xFFFF, &v)) { exit(EXIT_FAILURE); }
                 cfg->decoder_input_buffer_size = (size_t)v;

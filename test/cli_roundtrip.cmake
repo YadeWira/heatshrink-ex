@@ -46,6 +46,41 @@ function(run_roundtrip name params input)
     endif()
 endfunction()
 
+# Framed streams: -f writes an 8-byte header carrying -w and -l; decoding
+# auto-detects it, so no parameters are needed.
+function(run_framed name enc_params dec_params input)
+    separate_arguments(_enc UNIX_COMMAND "${enc_params}")
+    separate_arguments(_dec UNIX_COMMAND "${dec_params}")
+
+    execute_process(
+        COMMAND ${_hs_cmd} -e -f ${_enc} "${input}" "${WORKDIR}/${name}.hs"
+        RESULT_VARIABLE _res ERROR_VARIABLE _err)
+    if(NOT _res EQUAL 0)
+        message(FATAL_ERROR "[${name}] framed encode failed (${_res}): ${_err}")
+    endif()
+
+    execute_process(
+        COMMAND ${_hs_cmd} -d ${_dec} "${WORKDIR}/${name}.hs" "${WORKDIR}/${name}.out"
+        RESULT_VARIABLE _res ERROR_VARIABLE _err)
+    if(NOT _res EQUAL 0)
+        message(FATAL_ERROR "[${name}] framed decode failed (${_res}): ${_err}")
+    endif()
+
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files
+        "${input}" "${WORKDIR}/${name}.out" RESULT_VARIABLE _res)
+    if(NOT _res EQUAL 0)
+        message(FATAL_ERROR "[${name}] framed round trip mismatch")
+    endif()
+endfunction()
+
+function(expect_failure name)
+    execute_process(COMMAND ${_hs_cmd} ${ARGN}
+        RESULT_VARIABLE _res OUTPUT_QUIET ERROR_QUIET)
+    if(_res EQUAL 0)
+        message(FATAL_ERROR "[${name}] expected a failure, but the command succeeded")
+    endif()
+endfunction()
+
 run_roundtrip("w8-l4" "-w 8 -l 4" "${WORKDIR}/input.txt")
 run_roundtrip("w11-l4" "-w 11 -l 4" "${WORKDIR}/input.txt")
 run_roundtrip("w14-l7" "-w 14 -l 7" "${WORKDIR}/input.txt")
@@ -71,5 +106,30 @@ execute_process(
 if(NOT _res EQUAL 0)
     message(FATAL_ERROR "verbose encode failed (${_res}): ${_err}")
 endif()
+
+run_framed("framed-default" "" "" "${WORKDIR}/input.txt")
+run_framed("framed-w15" "-w 15 -l 6" "" "${WORKDIR}/input.txt")
+run_framed("framed-w8" "-w 8 -l 3" "" "${WORKDIR}/input.txt")
+run_framed("framed-explicit-match" "-w 13 -l 5" "-w 13 -l 5" "${WORKDIR}/input.txt")
+run_framed("framed-empty" "" "" "${WORKDIR}/empty.bin")
+
+# The header must win over nothing, but must not be silently overridden by a
+# contradictory command line.
+expect_failure("framed-conflicting-w" -d -w 11 "${WORKDIR}/framed-explicit-match.hs")
+expect_failure("framed-conflicting-l" -d -l 3 "${WORKDIR}/framed-explicit-match.hs")
+# -f on a raw stream is an error, and so is a truncated header.
+execute_process(COMMAND ${_hs_cmd} -e "${WORKDIR}/input.txt" "${WORKDIR}/raw.hs"
+    RESULT_VARIABLE _res ERROR_VARIABLE _err)
+if(NOT _res EQUAL 0)
+    message(FATAL_ERROR "raw encode failed: ${_err}")
+endif()
+expect_failure("require-frame-on-raw" -d -f "${WORKDIR}/raw.hs")
+file(WRITE "${WORKDIR}/truncated.hs" "HSHR\x01")
+expect_failure("truncated-header" -d "${WORKDIR}/truncated.hs" "${WORKDIR}/truncated.out")
+# A header with a bogus version must be rejected (all bytes printable so the
+# script can write them without binary escapes).
+string(ASCII 72 83 72 82 50 48 97 98 _bad_header)
+file(WRITE "${WORKDIR}/badversion.hs" "${_bad_header}")
+expect_failure("bad-version" -d "${WORKDIR}/badversion.hs" "${WORKDIR}/badversion.out")
 
 message(STATUS "CLI round trip tests passed")
