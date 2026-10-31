@@ -6,7 +6,7 @@ the data compression/decompression library for embedded/real-time systems.
 The bit stream is **identical** to upstream heatshrink 0.4.x: files written by
 this fork decode with the original tool and vice versa. What this fork adds:
 
-- A portable **CMake** build for Linux (x86, x86_64, ARMv7, AArch64), Windows
+- A portable **CMake** build for Linux (x86, x86_64, AArch64), Windows
   (x86/x64, MSVC or MinGW-w64, **Windows 7 SP1+**) and macOS, with install
   rules and a `find_package(heatshrink CONFIG)` package.
 - A command line tool with **no POSIX-only dependencies** (no `getopt.h`,
@@ -21,7 +21,15 @@ this fork decode with the original tool and vice versa. What this fork adds:
 
 Licensed under the ISC license, like upstream. See `CHANGELOG.md` for details.
 
-[![CI](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml/badge.svg)](https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml)
+| Component | Status |
+|---|---|
+| CI | [![CI][ciBadge]][ciLink] |
+| Latest release | [![Release][relBadge]][relLink] |
+| Library | C99, no dependencies beyond libc; static (no `malloc`) and dynamic allocation |
+| CLI | raw by default, optional frame (`-f`) and size + CRC32 (`-c`), binary-safe I/O |
+| Platforms | Linux x86 / x86_64 / AArch64 · Windows x86 / x64 (7 SP1+) · macOS arm64 |
+| Bit stream | byte-identical to upstream heatshrink 0.4.1 for `-w 4` .. `-w 14` |
+| Vendoring | six files, `-vendor.tar.gz`; shipped by zpaq-std 1.7.0 |
 
 ## Adoption
 
@@ -71,9 +79,9 @@ The library and the command line tool build and run on:
 
 | Platform | Architectures | Compiler / notes |
 |---|---|---|
-| Linux | x86 (i686), x86_64, ARMv7, AArch64 | GCC or Clang |
+| Linux | x86 (i686), x86_64, AArch64 | GCC or Clang |
 | Windows | x86 (32 bit), x86_64 | MSVC 2017+ or MinGW-w64; **Windows 7 SP1 or newer** |
-| macOS | Intel and Apple Silicon | Clang (no platform specific code) |
+| macOS | Apple Silicon | Clang (no platform specific code) |
 
 The source is plain C99 and the only dependency is the C standard library.
 There are no POSIX-only calls in the command line tool: file I/O uses
@@ -236,7 +244,7 @@ documentation.
 [index]: http://spin.atomicobject.com/2014/01/13/lightweight-indexing-for-embedded-systems/
 [LZSS]: http://en.wikipedia.org/wiki/Lempel-Ziv-Storer-Szymanski
 
-
-## Build Status
-
-  [![Build Status](https://travis-ci.org/atomicobject/heatshrink.png)](http://travis-ci.org/atomicobject/heatshrink)
+[ciBadge]: https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml/badge.svg "Continuous Integration"
+[ciLink]: https://github.com/YadeWira/heatshrink-ex/actions/workflows/ci.yml
+[relBadge]: https://img.shields.io/github/v/release/YadeWira/heatshrink-ex "Latest release"
+[relLink]: https://github.com/YadeWira/heatshrink-ex/releases/latest

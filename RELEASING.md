@@ -8,9 +8,9 @@ CMake reads it, so there is nothing else to bump.
 1. Clean tree, `master` up to date.
 2. `ctest` green in at least three flavours: `Release`, `Debug` (`-O0`) and
    `-fsanitize=address,undefined`.
-3. CI green on the release commit (13 jobs: Linux x86_64 GCC/Clang, i686,
-   shared, debug, sanitizers, macOS, MSVC Win32/x64, MinGW 32/64, AArch64 and
-   ARMv7 under QEMU).
+3. CI green on the release commit (12 jobs: Linux x86_64 GCC/Clang, i686,
+   shared, debug, sanitizers, macOS arm64, MSVC Win32/x64, MinGW 32/64 and
+   AArch64 under QEMU).
 4. `./make-release.sh` from a clean tree. It writes to `dist/`:
    * `heatshrink-ex-<version>.tar.gz` (source)
    * `heatshrink-ex-<version>-vendor.tar.gz` (the six library files in `hs/`)

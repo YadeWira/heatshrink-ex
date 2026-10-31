@@ -1,5 +1,14 @@
 # heatshrink Changes By Release
 
+## Unreleased
+
+### Platform support
+
+Dropped Linux ARMv7 (32-bit ARM) and macOS on Intel from the supported and
+tested platforms. AArch64 and Apple Silicon remain supported; the code is still
+plain C99 and may well build on the dropped targets, but it is no longer
+verified and no longer part of the CI matrix.
+
 ## v0.7.0 - 2026-10-23
 
 ### New
