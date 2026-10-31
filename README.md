@@ -25,11 +25,6 @@ Licensed under the ISC license, like upstream. See `CHANGELOG.md` for details.
 |---|---|
 | CI | [![CI][ciBadge]][ciLink] |
 | Latest release | [![Release][relBadge]][relLink] |
-| Library | C99, no dependencies beyond libc; static (no `malloc`) and dynamic allocation |
-| CLI | raw by default, optional frame (`-f`) and size + CRC32 (`-c`), binary-safe I/O |
-| Platforms | Linux x86 / x86_64 / AArch64 · Windows x86 / x64 (7 SP1+) · macOS arm64 |
-| Bit stream | byte-identical to upstream heatshrink 0.4.1 for `-w 4` .. `-w 14` |
-| Vendoring | six files, `-vendor.tar.gz`; shipped by zpaq-std 1.7.0 |
 
 ## Adoption
 
