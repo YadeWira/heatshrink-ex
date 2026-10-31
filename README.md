@@ -28,11 +28,12 @@ Licensed under the ISC license, like upstream. See `CHANGELOG.md` for details.
 
 ## Adoption
 
-* **[zpaq-std](https://github.com/YadeWira/zpaq-std/releases/tag/v1.7.0) 1.7.0**
-  vendors the six library files (byte-identical to tag `v0.7.0`) for its
-  `-ma:hs` compression levels. Verified on Windows 7 x86 and x64, producing
-  output identical to heatshrink 0.4.1 and readable by zpaq 7.15 and
-  zpaqfranz. Its `-ma:hs` output is unchanged since zpaq-std 1.6.0.
+* **[zpaq-std](https://github.com/YadeWira/zpaq-std/releases/tag/v2.0.3) 2.0.3**
+  vendors the six library files (byte-identical to tag `v0.7.2`) for its
+  `-ma:hs` compression levels. On their 104 MB corpus the three levels take
+  2.0 / 2.5 / 3.7 s with 0.7.2 (3.7 / 5.6 / 11.0 s before), producing exactly
+  the same bytes as zpaq-std 2.0.2 and heatshrink 0.4.1; verified on Windows 7
+  x86 and x64 and readable by zpaq 7.15 and zpaqfranz.
 
 
 ## Key Features:
