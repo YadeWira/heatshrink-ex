@@ -1,5 +1,20 @@
 # heatshrink Changes By Release
 
+## v0.7.2 - 2026-10-31
+
+### Bug Fixes
+
+`heatshrink_decoder_poll()` with a zero sized output buffer could never make
+progress but returned `HSDR_POLL_MORE`, so callers that retry on `MORE` (for
+example when their output buffer is exactly full and the remaining space is
+zero) looped forever. It now returns the new `HSDR_POLL_ERROR_MISUSE` (-3),
+which is what the encoder already did. No stream changes.
+
+### Build
+
+`HEATSHRINK_HASH_BITS` outside 0..16 is now a compile error: every extra bit
+doubles a stack array, so a typo could ask for megabytes of stack.
+
 ## v0.7.1 - 2026-10-31
 
 ### Performance
