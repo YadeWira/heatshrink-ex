@@ -431,23 +431,42 @@ static void do_indexing(heatshrink_encoder *hse) {
      *    dynamically improve the index.
      * */
     struct hs_index *hsi = HEATSHRINK_ENCODER_INDEX(hse);
+#if HEATSHRINK_HASH_BITS > 0
+    uint16_t head[HEATSHRINK_HASH_SIZE];
+    memset(head, 0xFF, sizeof(head));
+#else
     uint16_t last[256];
     memset(last, 0xFF, sizeof(last));
+#endif
 
     uint8_t * const data = hse->buffer;
     uint16_t * const index = hsi->index;
 
     const size_t input_offset = get_input_offset(hse);
     const size_t end = input_offset + hse->input_size;
+#if HEATSHRINK_HASH_BITS > 0
+    const size_t buffer_end = input_offset * 2;
+#endif
 
     /* A 15-bit window fills the whole 16-bit position space, so the bound
      * must be computed in size_t: `input_offset + input_size` is 65536 and
      * does not fit in a uint16_t. */
     for (size_t i = 0; i < end; i++) {
+#if HEATSHRINK_HASH_BITS > 0
+        /* Two byte key: the chain only reaches candidates that can match at
+         * least two bytes, and one byte matches are never emitted. */
+        uint16_t key = (uint16_t)(data[i]
+            | (uint16_t)((i + 1 < buffer_end) ? (data[i + 1] << 8) : 0));
+        uint16_t h = (uint16_t)(((key * 40503u) >> 4)
+            & (HEATSHRINK_HASH_SIZE - 1));
+        index[i] = head[h];
+        head[h] = (uint16_t)i;
+#else
         uint8_t v = data[i];
         uint16_t lv = last[v];
         index[i] = lv;
         last[v] = (uint16_t)i;
+#endif
     }
 #else
     (void)hse;
@@ -490,7 +509,13 @@ static uint16_t find_longest_match(heatshrink_encoder *hse, uint16_t start,
             continue;
         }
 
+#if HEATSHRINK_HASH_BITS > 0
+        /* A hash collision can link a position whose first byte differs, so
+         * verify from the first byte. */
+        for (len = 0; len < maxlen; len++) {
+#else
         for (len = 1; len < maxlen; len++) {
+#endif
             if (pospoint[len] != needlepoint[len]) break;
         }
 

@@ -23,6 +23,8 @@ include(CMakePackageConfigHelpers)
 option(HEATSHRINK_BUILD_CLI "Build the heatshrink command line tool" ON)
 option(HEATSHRINK_BUILD_TESTS "Build the heatshrink test suite" ON)
 option(HEATSHRINK_USE_INDEX "Use the search index (faster, more RAM)" ON)
+set(HEATSHRINK_HASH_BITS 9 CACHE STRING
+    "Two-byte index chains: hash bits (0 = original one-byte chains)")
 option(HEATSHRINK_WERROR "Treat compiler warnings as errors" OFF)
 
 set(HEATSHRINK_SOURCES
@@ -85,6 +87,8 @@ foreach(_hs_alloc IN ITEMS static dynamic)
     target_compile_definitions(heatshrink_${_hs_alloc} PUBLIC
         HEATSHRINK_DYNAMIC_ALLOC=${_hs_alloc_value}
         HEATSHRINK_USE_INDEX=$<BOOL:${HEATSHRINK_USE_INDEX}>)
+    target_compile_definitions(heatshrink_${_hs_alloc} PRIVATE
+        HEATSHRINK_HASH_BITS=${HEATSHRINK_HASH_BITS})
     hs_set_warnings(heatshrink_${_hs_alloc})
 
     set_target_properties(heatshrink_${_hs_alloc} PROPERTIES

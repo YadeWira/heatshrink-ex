@@ -1,5 +1,33 @@
 # heatshrink Changes By Release
 
+## v0.7.1 - 2026-10-31
+
+### Performance
+
+The encoder now keys its search index by two bytes instead of one
+(`HEATSHRINK_HASH_BITS`, default 9). A one byte match is never worth a
+back-reference at any supported window/lookahead setting, so this only stops
+examining candidates that cannot win: **the compressed output is
+byte-identical**. Verified on 240 data/parameter combinations and against the
+expected bytes in the test suite.
+
+Encode speed on a 17 file, 9.8 MB mixed corpus (min of 5 runs), MB/s:
+
+| | w11l4 | w13l5 | w14l6 | w15l6 |
+|---|---|---|---|---|
+| 0.7.0 | 17.6 | 9.8 | 4.0 | 2.1 |
+| 0.7.1 | 30.2 | 24.5 | 17.0 | 9.9 |
+
+Ratio and decode speed are unchanged; on a single 40 MB file at `-w 14 -l 6`
+encoding goes from 4.2 to 17.3 MB/s. The price is 1 KB of stack while the
+index is built (2^HEATSHRINK_HASH_BITS uint16_t entries). Set
+`HEATSHRINK_HASH_BITS=0` in `heatshrink_config.h` (or on the compiler command
+line) to keep the original 256 entry table on very small targets. CMake exposes
+the same knob as `-DHEATSHRINK_HASH_BITS=...`.
+
+This is a library change, but archives and streams do not change: 0.7.1 writes
+exactly the same bytes as 0.7.0 and 0.4.1 for the same input and settings.
+
 ## Unreleased
 
 ### Platform support

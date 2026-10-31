@@ -35,4 +35,17 @@
 #define HEATSHRINK_USE_INDEX 1
 #endif
 
+/* Key the search index by two bytes instead of one. A one byte match is never
+ * worth a back-reference at any supported window/lookahead setting, so this
+ * only stops examining candidates that cannot win: the compressed output is
+ * unchanged. Costs 2^HEATSHRINK_HASH_BITS uint16_t entries of stack while the
+ * index is built (1 KB with the default 9). Set to 0 for the original one-byte
+ * chains, which is the cheaper option on very small targets. */
+#ifndef HEATSHRINK_HASH_BITS
+#define HEATSHRINK_HASH_BITS 9
+#endif
+#if HEATSHRINK_HASH_BITS > 0
+#define HEATSHRINK_HASH_SIZE (1u << HEATSHRINK_HASH_BITS)
+#endif
+
 #endif
