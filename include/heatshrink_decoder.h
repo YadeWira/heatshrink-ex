@@ -21,6 +21,7 @@ typedef enum {
     HSDR_POLL_MORE,             /* more data remaining, call again w/ fresh output buffer */
     HSDR_POLL_ERROR_NULL=-1,    /* NULL arguments */
     HSDR_POLL_ERROR_UNKNOWN=-2,
+    HSDR_POLL_ERROR_MISUSE=-3,  /* zero sized output buffer */
 } HSD_poll_res;
 
 typedef enum {

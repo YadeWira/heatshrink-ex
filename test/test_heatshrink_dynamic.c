@@ -335,6 +335,19 @@ TEST decoder_sink_should_sink_data_when_preconditions_hold(void) {
     PASS();
 }
 
+TEST decoder_poll_should_reject_zero_sized_output_buffer(void) {
+    uint8_t output[8];
+    size_t out_sz = 123;
+    heatshrink_decoder *hsd = heatshrink_decoder_alloc(256,
+        HEATSHRINK_MIN_WINDOW_BITS, HEATSHRINK_MIN_LOOKAHEAD_BITS);
+    ASSERT(hsd);
+    ASSERT_EQ(HSDR_POLL_ERROR_MISUSE,
+        heatshrink_decoder_poll(hsd, output, 0, &out_sz));
+    ASSERT_EQ(0, out_sz);
+    heatshrink_decoder_free(hsd);
+    PASS();
+}
+
 TEST decoder_poll_should_return_empty_if_empty(void) {
     uint8_t output[256];
     size_t out_sz = 0;
@@ -633,6 +646,7 @@ SUITE(decoding) {
     RUN_TEST(gen);
 
     RUN_TEST(decoder_poll_should_return_empty_if_empty);
+    RUN_TEST(decoder_poll_should_reject_zero_sized_output_buffer);
     RUN_TEST(decoder_poll_should_reject_null_hsd);
     RUN_TEST(decoder_poll_should_reject_null_output_buffer);
     RUN_TEST(decoder_poll_should_reject_null_output_size_pointer);

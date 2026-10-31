@@ -139,6 +139,12 @@ HSD_poll_res heatshrink_decoder_poll(heatshrink_decoder *hsd,
     if ((hsd == NULL) || (out_buf == NULL) || (output_size == NULL)) {
         return HSDR_POLL_ERROR_NULL;
     }
+    if (out_buf_size == 0) {
+        /* Without room there is no way to make progress, and reporting MORE
+         * would make callers that retry spin forever. Matches the encoder. */
+        *output_size = 0;
+        return HSDR_POLL_ERROR_MISUSE;
+    }
     *output_size = 0;
 
     output_info oi;
