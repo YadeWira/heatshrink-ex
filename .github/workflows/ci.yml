@@ -98,9 +98,9 @@ jobs:
       matrix:
         include:
           - msystem: MINGW64
-            packages: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-make
+            packages: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake ninja
           - msystem: MINGW32
-            packages: mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-make
+            packages: mingw-w64-i686-gcc mingw-w64-i686-cmake ninja
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +112,7 @@ jobs:
 
       - name: Configure
         shell: msys2 {0}
-        run: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         shell: msys2 {0}
